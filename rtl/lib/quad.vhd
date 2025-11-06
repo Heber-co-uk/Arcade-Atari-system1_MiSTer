@@ -41,12 +41,17 @@ architecture RTL of QUAD is
 
 	alias  mclk                       : std_logic is mouse(24);
 	signal mclk_last                  : std_logic := '0';
-	signal x_dir, y_dir               : std_logic := '0';
-	signal timer                      : std_logic_vector(13 downto 0) := (others => '0'); -- clocked at 7.159Mhz gives 437 rollovers / second
+	signal timer                      : std_logic_vector(9 downto 0) := (others => '0'); -- clocked at 7.159Mhz gives 437*16 rollovers / second
 	signal wheel                      : signed( 3 downto 0) := (others => '0');
 	signal x_ctr, y_ctr               : signed( 7 downto 0) := (others => '0');
 	signal joy_h_xlat, joy_v_xlat     : signed( 8 downto 0) := (others => '0');
 	signal mouse_h_xlat, mouse_v_xlat : signed( 9 downto 0) := (others => '0');
+	
+	signal xa_quad : unsigned(3 downto 0) := "0011";
+	signal xb_quad : unsigned(3 downto 0) := "0110";
+	signal ya_quad : unsigned(3 downto 0) := "0011";
+	signal yb_quad : unsigned(3 downto 0) := "0110";
+	
 begin
 	-- index into timer counter for generating quadrature signals, lower index = more pulses/second
 	idx <=
@@ -62,17 +67,19 @@ begin
 	joy_h_xlat   <= signed(joy(7) & joy( 7 downto 0)) - signed(joy(15) & joy(15 downto 8));
 	joy_v_xlat   <= signed(joy(7) & joy( 7 downto 0)) + signed(joy(15) & joy(15 downto 8));
 	-- Translate mouse coordinates on the Cartesian plane to remove 45 degree trackball rotation (also invert Y axis to match joystick)
-	mouse_h_xlat <= signed((mouse(4) & mouse(4) & mouse(15 downto  8))) + signed((mouse(5) & mouse(5) & mouse(23 downto 16)));
-	mouse_v_xlat <= signed((mouse(4) & mouse(4) & mouse(15 downto  8))) - signed((mouse(5) & mouse(5) & mouse(23 downto 16)));
+	mouse_h_xlat <= signed(mouse(4) & mouse(4) & mouse(15 downto  8));--signed((mouse(4) & mouse(4) & mouse(15 downto  8))) + signed((mouse(5) & mouse(5) & mouse(23 downto 16)));
+	mouse_v_xlat <= signed(mouse(5) & mouse(5) & mouse(23 downto 16));--signed((mouse(4) & mouse(4) & mouse(15 downto  8))) - signed((mouse(5) & mouse(5) & mouse(23 downto 16)));
 
 	-- generate horizontal quadrature outputs
 	p_QX : process
 	begin
 		wait until rising_edge(clk);
 		if (x_ctr /= 0) then
-			XA <= timer(idx) xor ( (    x_dir) and timer(idx-1) );
-			XB <= timer(idx) xor ( (not x_dir) and timer(idx-1) );
+			--XA <= timer(idx) xor ( (    x_dir) and timer(idx-1) );
+			--XB <= timer(idx) xor ( (not x_dir) and timer(idx-1) );
 		end if;
+		XA <= xa_quad(0);
+		XB <= xb_quad(0);
 	end process;
 
 	-- generate vertical quadrature outputs
@@ -80,9 +87,11 @@ begin
 	begin
 		wait until rising_edge(clk);
 		if (y_ctr /= 0) then
-			YA <= timer(idx) xor ( (    y_dir) and timer(idx-1) );
-			YB <= timer(idx) xor ( (not y_dir) and timer(idx-1) );
+			--YA <= timer(idx) xor ( (    y_dir) and timer(idx-1) );
+			--YB <= timer(idx) xor ( (not y_dir) and timer(idx-1) );
 		end if;
+		YA <= ya_quad(0);
+		YB <= yb_quad(0);
 	end process;
 
 	-- scans joystick inputs for changes
@@ -97,13 +106,15 @@ begin
 				timer <= (others=>'1');
 				sample <= sample_interval;
 				-- Horizontal mouse movement
-				x_dir <= mouse_h_xlat(mouse_h_xlat'LEFT); -- 1=L 0=R
-				x_ctr <= abs(mouse_h_xlat(mouse_h_xlat'LEFT downto mouse_h_xlat'LEFT - x_ctr'LEFT));
+				--x_ctr <= abs(mouse_h_xlat(mouse_h_xlat'LEFT downto mouse_h_xlat'LEFT - x_ctr'LEFT));
+				x_ctr <= x_ctr + shift_left(mouse_h_xlat(7 downto 0), to_integer(unsigned(speed)));
 				-- Vertical mouse movement
-				y_dir <= mouse_v_xlat(mouse_v_xlat'LEFT); -- 1=U 0=D
-				y_ctr <= abs(mouse_v_xlat(mouse_v_xlat'LEFT downto mouse_v_xlat'LEFT - y_ctr'LEFT));
+				--y_ctr <= abs(mouse_v_xlat(mouse_v_xlat'LEFT downto mouse_v_xlat'LEFT - y_ctr'LEFT));
+				y_ctr <= y_ctr + shift_left(mouse_v_xlat(7 downto 0), to_integer(unsigned(speed)));
 			end if;
 		end if;
+		
+		
 
 		-- on timer rollover update x/y and sample counters
 		if (timer = 0) then
@@ -112,35 +123,51 @@ begin
 			else
 				sample <= sample - 1;
 			end if;
+			
+			-- mouse quadrature output
 			if (x_ctr /= 0) then
-				x_ctr <= x_ctr - 1;
+				if (x_ctr < 0) then
+					xa_quad <= rotate_left(xa_quad,1);
+					xb_quad <= rotate_left(xb_quad,1);
+					x_ctr <= x_ctr + 1;
+				else
+					xa_quad <= rotate_right(xa_quad,1);
+					xb_quad <= rotate_right(xb_quad,1);
+					x_ctr <= x_ctr - 1;
+				end if;
 			end if;
 			if (y_ctr /= 0) then
-				y_ctr <= y_ctr - 1;
+				if (y_ctr > 0) then
+					ya_quad <= rotate_left(ya_quad,1);
+					yb_quad <= rotate_left(yb_quad,1);
+					y_ctr <= y_ctr - 1;
+				else
+					ya_quad <= rotate_right(ya_quad,1);
+					yb_quad <= rotate_right(yb_quad,1);
+					y_ctr <= y_ctr + 1;
+				end if;
 			end if;
 
 			-- joystick is sampled every 7.158Mhz/(timer*sample_interval) = about 27Hz
-			if (sample = 0) then
-				if (mode = '1') then -- if weel mode
-					if    (wheel = signed(joy(7 downto 4))) then
-						x_ctr <= (others => '0');
-						y_ctr <= (others => '0');
-					elsif (wheel > signed(joy(7 downto 4))) then
-						x_dir <= '1'; -- 1=L
-						x_ctr <= x"01";
-						wheel <= wheel - 1;
-					elsif (wheel < signed(joy(7 downto 4))) then
-						x_dir <= '0'; -- 0=R
-						x_ctr <= x"01";
-						wheel <= wheel + 1;
-					end if;
-				else -- else mouse/joystick mode
-					x_dir <= joy_h_xlat(joy_h_xlat'LEFT); -- 1=L 0=R
-					x_ctr <= abs(joy_h_xlat(joy_h_xlat'LEFT downto joy_h_xlat'LEFT - x_ctr'LEFT))/2;
-					y_dir <= joy_v_xlat(joy_v_xlat'LEFT); -- 1=U 0=D
-					y_ctr <= abs(joy_v_xlat(joy_v_xlat'LEFT downto joy_v_xlat'LEFT - y_ctr'LEFT))/2;
-				end if;
-			end if;
+--			if (sample = 0) then
+--				if (mode = '1') then -- if weel mode
+--					if    (wheel = signed(joy(7 downto 4))) then
+--						x_ctr <= (others => '0');
+--						y_ctr <= (others => '0');
+--					elsif (wheel > signed(joy(7 downto 4))) then
+--						x_ctr <= x_ctr + shift_left(x"1", to_integer(unsigned(speed)));
+--						wheel <= wheel - 1;
+--					elsif (wheel < signed(joy(7 downto 4))) then
+--						x_ctr <= x_ctr = shift_left(x"1", to_integer(unsigned(speed)));
+--						wheel <= wheel + 1;
+--					end if;
+--				else -- else mouse/joystick mode
+--					--x_dir <= joy_h_xlat(joy_h_xlat'LEFT); -- 1=L 0=R
+--					x_ctr <= (joy_h_xlat(joy_h_xlat'LEFT downto joy_h_xlat'LEFT - x_ctr'LEFT));
+--					--y_dir <= joy_v_xlat(joy_v_xlat'LEFT); -- 1=U 0=D
+--					y_ctr <= (joy_v_xlat(joy_v_xlat'LEFT downto joy_v_xlat'LEFT - y_ctr'LEFT));
+--				end if;
+--			end if;
 		end if;
 	end process;
 end RTL;

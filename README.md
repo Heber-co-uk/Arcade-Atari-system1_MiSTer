@@ -1,4 +1,8 @@
-# Atari System-1 FPGA Arcade  
+# Atari System-1 FPGA Arcade - Modified
+
+The [original core](https://github.com/MiSTer-devel/Arcade-Atari-system1_MiSTer) was designed for the best experience with home console controllers, which means that in RoadBlasters, the acceleration is controlled by tilting the stick forwards and steering is controlled by tilting the stick left or right. However, the original RoadBlasters arcade machine uses a steering wheel with a rotary encoder, which didn't work with the original core.
+
+The core has been modified so that the steering in RoadBlasters uses the mouse input, which is what the steering wheel maps to on the Multisystem 2 JAMMA's USB JAMMA controller interface and on arcade control interfaces made by other companies. The paddle control is used for the accelerator so that the accelerator potentiometer can be connected to the analogue input on the USB JAMMA controller.
 
 ## About  
 FPGA implementation of Atari's System 1 (LSI version) arcade platform from 1984.  

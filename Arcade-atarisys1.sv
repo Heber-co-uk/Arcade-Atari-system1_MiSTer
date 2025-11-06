@@ -184,7 +184,7 @@ module emu
 ///////// Default values for ports not used in this core /////////
 
 assign ADC_BUS  = 'Z;
-assign USER_OUT = '1;
+assign USER_OUT[6:2] = '1;
 assign {UART_RTS, UART_TXD, UART_DTR} = 0;
 assign {SD_SCK, SD_MOSI, SD_CS} = 'Z;
 assign {SDRAM_DQ, SDRAM_A, SDRAM_BA, SDRAM_CLK, SDRAM_CKE, SDRAM_DQML, SDRAM_DQMH, SDRAM_nWE, SDRAM_nCAS, SDRAM_nRAS, SDRAM_nCS} = 'Z;
@@ -230,6 +230,7 @@ assign BUTTONS = 0;
 wire [31:0] joystick_0;
 wire [15:0] joystick_l_analog_0;
 wire [15:0] joystick_r_analog_0;
+wire [7:0] paddle_0;
 
 wire [10:0] ps2_key;
 wire [24:0]	ps2_mouse;
@@ -260,6 +261,10 @@ assign VIDEO_ARY = (!ar) ? 12'd3 : 12'd0;
 `include "build_id.v"
 localparam CONF_STR = {
 	"A.ATARISYS1;;",
+	"-;",
+	"O[10],Roadblast Wheel Mode,0,1;",
+	"O[11],SNAC for quadrature,Off,On;",
+	"O[12],Joy for quadrature,Off,On;",
 	"-;",
 	"O[122:121],Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
 	"O[5:3],Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
@@ -459,6 +464,7 @@ assign sl_wr_ep1     = (ioctl_wr && !ioctl_index && ioctl_download && ioctl_addr
 		.joystick_0(joystick_0),
 		.joystick_l_analog_0(joystick_l_analog_0),
 		.joystick_r_analog_0(joystick_r_analog_0),
+		.paddle_0(paddle_0),
 		.ps2_mouse(ps2_mouse),
 		.ps2_key(ps2_key)
 	);
@@ -662,8 +668,8 @@ assign slv_SDATA =
 // Trigger button to P103-10 (SW2)
 // Thumb button to P103-L (SW1)
 
-reg [7:0] joystick_l_analog_0_lo = 0;
-reg [7:0] joystick_l_analog_0_hi = 0;
+//reg [7:0] joystick_l_analog_0_lo = 0;
+//reg [7:0] joystick_l_analog_0_hi = 0;
 reg [7:0] joystick_r_analog_0_lo = 0;
 reg [7:0] joystick_r_analog_0_hi = 0;
 reg [7:0] inputs;
@@ -738,36 +744,44 @@ always @(posedge clk_sys) begin
 	// Roadblasters #########################################
 	else if ( (slap_type==109) || (slap_type==110) )
 	begin
-		wheel_mode = 1;
+		wheel_mode = status[10];
 		// NC NC NC Action Action
 		switches = ({3'b111, ~(kbd1[0] | joystick_0[4] | mouse_L), ~(kbd1[1] | joystick_0[5] | mouse_R)});
 		// Throttle analog type control
-		if ((adc_addr==3'd3) && (joystick_l_analog_0[15]))
-			// select negative range only (sign=1) discard sign bit and double (<<1) then invert range (^FF)
-			adc_data = {joystick_l_analog_0[14:8],1'b1}^8'hff; // Center=00 Up=FF
-		else
-			adc_data = 0;
+		adc_data = paddle_0;
+//		if ((adc_addr==3'd3) && (joystick_l_analog_0[15]))
+//			// select negative range only (sign=1) discard sign bit and double (<<1) then invert range (^FF)
+//			adc_data = {joystick_l_analog_0[14:8],1'b1}^8'hff; // Center=00 Up=FF
+//		else
+//			adc_data = 0;
 		// Directional analog type control from steering wheel left=7F, center=3F right=00
-		joystick_l_analog_0_hi = joystick_r_analog_0[15:8]; // up/down not used
-		joystick_l_analog_0_lo = joystick_l_analog_0[7:0] ; // left/right
+		//joystick_l_analog_0_hi = joystick_r_analog_0[15:8]; // up/down not used
+		//joystick_l_analog_0_lo = joystick_l_analog_0[7:0] ; // left/right
 	end
 end
 
-wire [3:0]	clks, dirs;
+wire [3:0]	clks, dirs, quad1out;
 
 // for Marble player 1 or Road Blasters wheel mode (analog joy or mouse only)
 quad quad_p1
 (
 	.clk        (clk_7M),
 	.mode       (wheel_mode), // 1 = wheel, 0 = joy/mouse
-	.joy        (joystick_l_analog_0),
+	.joy        (status[12] ? joystick_l_analog_0 : 0),
 	.mouse      (ps2_mouse),
 	.speed      (status[9:8]),
-	.XA         (dirs[0]),
-	.XB         (clks[0]),
-	.YA         (dirs[1]),
-	.YB         (clks[1])
+	.XA         (quad1out[0]),
+	.XB         (quad1out[1]),
+	.YA         (quad1out[2]),
+	.YB         (quad1out[3])
 );
+
+assign dirs[0] = status[11] ? USER_IN[2] : quad1out[0];
+assign clks[0] = status[11] ? USER_IN[3] : quad1out[1];
+assign dirs[1] = status[11] ? USER_IN[4] : quad1out[2];
+assign clks[1] = status[11] ? USER_IN[5] : quad1out[3];
+assign USER_OUT[0] = dirs[0];
+assign USER_OUT[1] = clks[0];
 
 // only used by Marble player 2
 quad quad_p2
